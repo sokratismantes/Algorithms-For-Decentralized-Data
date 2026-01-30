@@ -1,55 +1,29 @@
+"""
+tempCodeRunnerFile.py
+
+Προαιρετικό demo/δοκιμαστικό αρχείο (μπορείς να το αγνοήσεις στην παράδοση).
+Για επίσημη αξιολόγηση/plots χρησιμοποίησε: experiments.py
+"""
+
 from pathlib import Path
-import argparse
-import random
-
 from data_read import load_and_preprocess
-from chord import ChordRing, chord_hash
+from chord import ChordRing
 
+project_root = Path(__file__).resolve().parent.parent
+file_path = project_root / "data" / "data_movies_clean_2.xlsx"
+df = load_and_preprocess(file_path)
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--data", type=str, required=True, help="Path to xlsx dataset")
-    parser.add_argument("--m", type=int, default=40, help="Chord keyspace bits")
-    parser.add_argument("--nodes", type=int, default=10, help="Number of nodes")
-    args = parser.parse_args()
+ring = ChordRing(m=40, btree_size=32)
 
-    df = load_and_preprocess(Path(args.data))
+max_hash = 2 ** ring.m - 1
+num_nodes = 10
+node_ids = [(i * max_hash) // num_nodes for i in range(1, num_nodes + 1)]
+for nid in node_ids:
+    ring.join_node(nid)
 
-    ring = ChordRing(m=args.m)
+for _, row in df.head(200).iterrows():
+    ring.insert_title(row["title"], row.to_dict())
 
-    # uniform node ids 
-    space = 2 ** ring.m
-    node_ids = [(i * space) // args.nodes for i in range(args.nodes)]
-    for nid in node_ids:
-        ring.join_node(nid)
-
-    print("\n=== Initial Chord Ring ===")
-    ring.print_nodes_summary()
-
-    print("\nInserting movie records into Chord...")
-    for _, row in df.iterrows():
-        title = str(row["title"])
-        key = chord_hash(title, ring.m)
-        ring.insert(key, row.to_dict())
-
-    print("\n=== After inserting movies ===")
-    ring.print_nodes_summary()
-
-    # simple lookup test 
-    titles = df["title"].dropna().astype(str).tolist()
-    if titles:
-        movie_title = random.choice(titles)
-        records, hops = ring.lookup(movie_title)
-        print(f'\nLookup: "{movie_title}" hops={hops}, found={bool(records)}')
-
-    # optional join/leave sanity
-    new_node_id = random.randrange(2 ** ring.m)
-    _, join_hops = ring.join_node(new_node_id, measure_hops=True, verbose=True)
-    print(f"\nJoin test: node={new_node_id}, total_redistribution_hops={join_hops}")
-
-    leave_hops = ring.leave_node(new_node_id, measure_hops=True, verbose=True)
-    print(f"\nLeave test: node={new_node_id}, total_redistribution_hops={leave_hops}")
-
-
-if __name__ == "__main__":
-    main()
+title = str(df.iloc[0]["title"])
+records, hops = ring.lookup(title)
+print(f"Lookup '{title}' -> hops={hops} found={bool(records)}")

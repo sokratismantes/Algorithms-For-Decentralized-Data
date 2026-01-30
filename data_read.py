@@ -1,17 +1,12 @@
-from pathlib import Path
-import pandas as pd
 import ast
+import pandas as pd
 
 
-"""
-Expected fields (may vary by dataset):
-id,title,adult,original_language,origin_country,release_date,
-genre_names,production_company_names,budget,revenue,runtime,popularity,vote_average,vote_count
-"""
-
-
-def parse_list_field(val):
-    """Metatrepw listes pou moiazoun me strings se Python list."""
+def _parse_list_field(val):
+    """
+    Converts list-like strings to Python lists.
+    Handles NaN and already-list values safely.
+    """
     if pd.isna(val):
         return []
     if isinstance(val, list):
@@ -22,70 +17,48 @@ def parse_list_field(val):
             return parsed
         return [str(parsed)]
     except Exception:
+        # fallback: keep as single string
         return [str(val)]
 
 
-def parse_origin_country(val):
-    """Origin country lista"""
-    return parse_list_field(val)
+def load_and_preprocess_csv(
+    file_path: str,
+    max_rows: int = 50_000,
+    seed: int = 1,
+) -> pd.DataFrame:
+    """
+    Load CSV, keep up to max_rows rows (sample if larger), and do light preprocessing.
 
-
-def _read_dataset(path: Path) -> pd.DataFrame:
-    suffix = path.suffix.lower()
-
-    if suffix == ".csv":
-        return pd.read_csv(path, low_memory=False)
-
-    if suffix in [".xlsx", ".xls"]:
-        return pd.read_excel(path)
-
-    raise ValueError(f"Unsupported file type: {suffix}. Use .csv or .xlsx/.xls")
-
-
-def load_and_preprocess(file_path) -> pd.DataFrame:
-    path = Path(file_path)
-    if not path.exists():
-        raise FileNotFoundError(f"Dataset not found: {path}")
-
-    df = _read_dataset(path)
+    Expected columns:
+    id, title, adult, original_language, origin_country, release_date,
+    genre_names, production_company_names, budget, revenue, runtime,
+    popularity, vote_average, vote_count
+    """
+    df = pd.read_csv(file_path)
     print(f"[INFO] Raw rows: {len(df)}")
 
-    # required column 
-    if "title" not in df.columns:
-        raise ValueError(f"[ERROR] Column 'title' not found. Columns: {list(df.columns)[:40]}")
+    # Keep up to max_rows (random sample -> more representative than head())
+    if len(df) > max_rows:
+        df = df.sample(n=max_rows, random_state=seed).reset_index(drop=True)
 
-    # release_date
+    # Ensure title exists and is string
+    if "title" not in df.columns:
+        raise ValueError("CSV must contain a 'title' column.")
+    df["title"] = df["title"].astype(str)
+
+    # Safe datetime parsing
     if "release_date" in df.columns:
         df["release_date"] = pd.to_datetime(df["release_date"], errors="coerce")
 
-    # list-like fields 
+    # Parse list-like fields into list columns (optional, but useful)
     if "origin_country" in df.columns:
-        df["origin_country_parsed"] = df["origin_country"].apply(parse_origin_country)
+        df["origin_country_parsed"] = df["origin_country"].apply(_parse_list_field)
 
     if "genre_names" in df.columns:
-        df["genre_list"] = df["genre_names"].apply(parse_list_field)
+        df["genre_list"] = df["genre_names"].apply(_parse_list_field)
 
     if "production_company_names" in df.columns:
-        df["production_company_list"] = df["production_company_names"].apply(parse_list_field)
+        df["production_company_list"] = df["production_company_names"].apply(_parse_list_field)
 
-    # popularity
-    if "popularity" in df.columns:
-        df["popularity"] = pd.to_numeric(df["popularity"], errors="coerce")
-        if df["popularity"].isna().any():
-            # fill NaNs with median to avoid breaking experiments
-            df["popularity"] = df["popularity"].fillna(df["popularity"].median(skipna=True))
-            print("[INFO] 'popularity' had NaNs -> filled with median.")
-    else:
-        # proxy options for datasets without popularity
-        if "vote_average" in df.columns:
-            df["popularity"] = pd.to_numeric(df["vote_average"], errors="coerce").fillna(0.0)
-            print("[WARN] 'popularity' missing -> using proxy from 'vote_average'.")
-        elif "vote_count" in df.columns:
-            df["popularity"] = pd.to_numeric(df["vote_count"], errors="coerce").fillna(0.0)
-            print("[WARN] 'popularity' missing -> using proxy from 'vote_count'.")
-        else:
-            df["popularity"] = 1.0
-            print("[WARN] 'popularity' missing -> defaulting to 1.0 for all rows.")
-
-    print(f"[INFO] Processed rows: {len(df)}")
+    print(f"[INFO] Using rows: {len(df)}")
     return df

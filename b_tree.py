@@ -5,13 +5,13 @@ class BPlusTreeNode:
     def __init__(self, size):
         self.is_leaf = False
         self.values = []      # keys
-        self.keys = []        
+        self.keys = []        # leaf: record lists ; internal: child pointers
         self.parent = None
         self.Next = None
         self.size = size      # max number of keys
 
     def insert_into_leaf(self, key, value):
-        # record payload, value of sortable key
+        # key = record payload, value = sortable key
         if len(self.values) == 0:
             self.values = [value]
             self.keys = [[key]]
@@ -113,9 +113,9 @@ class BPlusTree:
 
         self.insert_in_parent(node, promoted, new_internal)
 
-    
-    # searching by title
-    
+    # -------------------------
+    # SEARCHING BY TITLE (SHA-1)
+    # -------------------------
     def search_title(self, title):
         sha_key = int(hashlib.sha1(title.encode('utf-8')).hexdigest(), 16)
         return self.search_key(sha_key)
@@ -127,7 +127,7 @@ class BPlusTree:
             if v == sha_key:
                 return leaf.keys[i]   # return list of matching records
 
-        return []  # return empty list instead of None
+        return None
 
 
     def printTree(tree):
@@ -143,12 +143,12 @@ class BPlusTree:
     def get_all_items(self):
         items = []
 
-        # find most left leaf
+        # πήγαινε στο αριστερότερο leaf
         curr = self.root
         while not curr.is_leaf:
             curr = curr.keys[0]
 
-    # cross leaf nodes
+    # διάσχιση leaf nodes
         while curr:
             for i, key_val in enumerate(curr.values):
                 for record in curr.keys[i]:
@@ -158,49 +158,10 @@ class BPlusTree:
         return items
     
     def delete(self, sha_key):
-        """
-        Delete-by-key: removes the entire bucket for sha_key (all records under that key).
-        Returns how many records were removed (0 if key not found).
-        """
         leaf = self.search(sha_key)
 
         for i, val in enumerate(leaf.values):
             if val == sha_key:
-                removed = len(leaf.keys[i])
                 leaf.values.pop(i)
                 leaf.keys.pop(i)
-                return removed
-
-        return 0
-
-    def delete_title(self, sha_key, title):
-        """
-        Collision-safe delete: removes ONLY records whose 'title' matches the given title
-        inside the bucket of sha_key.
-
-        Returns how many records were removed (0 if none).
-        If the bucket becomes empty, it removes the key from the leaf.
-        """
-        title_n = str(title).strip()
-        leaf = self.search(sha_key)
-
-        for i, val in enumerate(leaf.values):
-            if val == sha_key:
-                bucket = leaf.keys[i]
-                before = len(bucket)
-
-                bucket = [r for r in bucket if str(r.get("title", "")).strip() != title_n]
-                removed = before - len(bucket)
-
-                if removed == 0:
-                    return 0
-
-                if len(bucket) == 0:
-                    leaf.values.pop(i)
-                    leaf.keys.pop(i)
-                else:
-                    leaf.keys[i] = bucket
-
-                return removed
-
-        return 0
+                return
