@@ -1,4 +1,3 @@
-# main_chord.py
 from pathlib import Path
 import pandas as pd
 import random
@@ -223,3 +222,4 @@ summary.to_csv(outdir / "summary_stats.csv", index=False)
 print("Saved:", outdir / "results.csv")
 print("Saved:", outdir / "summary_stats.csv")
 print("Plots saved:", ", ".join([str(outdir / f"{op}.png") for op in ["build","insert","update","lookup","delete","join","leave"]]))
+
