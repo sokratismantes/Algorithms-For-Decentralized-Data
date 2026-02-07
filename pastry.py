@@ -21,12 +21,12 @@ class PastryNode:
         self.bit_len = m
         self.id_bits = f"{self.id:0{self.bit_len}b}"
 
-        # route_table[level][bit] -> PastryNode or None
+        # route_table
         self.route_table: List[Dict[int, Optional[PastryNode]]] = [
             {0: None, 1: None} for _ in range(self.bit_len)
         ]
 
-        # leaf set: up to leaf_size numerically closest neighbors
+        # leaf set - up to leaf_size numerically closest neighbors
         self.leaf_set: List[PastryNode] = []
 
     def __repr__(self):
@@ -74,9 +74,6 @@ class PastryRing:
     def _rebuild_all(self):
         """
         Recompute route tables and leaf sets for all nodes.
-
-        NOTE: This is a simplified maintenance step (centralized rebuild) for the project,
-        while the routing/hops are measured using ONLY overlay forwarding decisions.
         """
         if not self.nodes:
             return
@@ -89,7 +86,7 @@ class PastryRing:
         for node in self.nodes:
             idx = self.nodes.index(node)
 
-            # leaf set: collect up to leaf_size neighbors around the node (circular)
+            # collect up to leaf_size neighbors around the node circularly
             neighbors: List[PastryNode] = []
             left = 1
             right = 1
@@ -106,7 +103,7 @@ class PastryRing:
                 right += 1
             node.leaf_set = neighbors[: self.leaf_size]
 
-            # routing table (binary prefix routing)
+            # routing table 
             node.route_table = [{0: None, 1: None} for _ in range(node.bit_len)]
             for other in self.nodes:
                 if other is node:
@@ -118,18 +115,15 @@ class PastryRing:
                     if existing is None:
                         node.route_table[pref][next_bit] = other
                     else:
-                        # keep a "better" representative (closer to node)
+                        # keep a better representative closer to node
                         if other.distance_to(node.id) < existing.distance_to(node.id):
                             node.route_table[pref][next_bit] = other
 
     # ------------------------- membership operations -------------------------
-    def join_node(self, node_id: int) -> Tuple[PastryNode, int, int]:
+    def join_node(self, node_id: int):
         """
-        Node join.
-        Returns (new_node, total_hops, moved_count)
-        where total_hops counts:
-          - a locate cost (routing to its own id)
-          - hops for moved keys (routing + 1 transfer per moved key)
+        Returns:
+        (new_node, locate_hops, avg_move_hops, moved_count)
         """
         locate_hops = 0
         if self.nodes:
@@ -140,65 +134,62 @@ class PastryRing:
         self.nodes.append(new_node)
         self._rebuild_all()
 
-        # minimal redistribution: only from numerically close neighbors (leaf set)
         moved = 0
-        moved_hops = 0
+        moved_hops_total = 0
         affected = list(new_node.leaf_set)
 
         for n in affected:
             items = n.btree.get_all_items()
             for k, rec in items:
-                # if new node is closer to the key than current holder, move it
                 if new_node.distance_to(k) < n.distance_to(k):
-                    # routing cost from n to key (overlay forwards)
+                    # routing cost from n to key 
                     _, h = self._route(n, k)
-                    moved_hops += h   
+                    moved_hops_total += h
                     new_node.btree.insert(rec, k)
                     n.btree.delete(k)
                     moved += 1
 
-        total = locate_hops + moved_hops
-        return new_node, total, moved
+        avg_move_hops = (moved_hops_total / moved) if moved > 0 else 0.0
+        return new_node, locate_hops, avg_move_hops, moved
 
-    def leave_node(self, node_id: int) -> Tuple[bool, int, int]:
+    def leave_node(self, node_id: int):
         """
-        Node leave.
-        Returns (ok, total_hops, moved_count)
-        where total_hops counts routing to destination + 1 transfer per moved key.
+        Leave event (routing-only hops).
+        routing_hops counts the overlay routing to reach the leaving node id.
         """
         node = next((n for n in self.nodes if n.id == node_id), None)
         if node is None:
             return False, 0, 0
 
+        routing_hops = 0
+        if self.nodes:
+            start = self.nodes[0]
+            _, routing_hops = self._route(start, node_id)
+
         if len(self.nodes) == 1:
             self.nodes.remove(node)
-            return True, 0, 0
+            return True, int(routing_hops), 0
 
         items = node.btree.get_all_items()
         self.nodes.remove(node)
         self._rebuild_all()
 
-        # choose a start node for routing (any remaining node)
         start = self.nodes[0]
 
         moved = 0
-        total_hops = 0
         for k, rec in items:
-            owner, h = self._route(start, k)
-            total_hops += h 
+            owner, _ = self._route(start, k)  
             owner.btree.insert(rec, k)
             moved += 1
 
-        return True, total_hops, moved
+        return True, int(routing_hops), moved
 
     # ------------------------- routing -------------------------
     def _route(self, start_node: PastryNode, key_int: int) -> Tuple[PastryNode, int]:
         """
-        Simplified Pastry routing:
         - First try to improve numerically using leaf_set.
         - Else use routing table on the first differing prefix bit.
-        - Else fallback to best among known candidates (leaf_set + routing entries).
-        Hops = number of overlay forwards (node-to-node moves).
+        - Else fallback to best among known candidates (leaf_set,routing entries).
         """
         if not self.nodes:
             raise RuntimeError("No nodes in pastry ring")
@@ -212,7 +203,7 @@ class PastryRing:
         while True:
             visited.add(curr.id)
 
-            # 1) leaf-set numerical improvement
+            # leaf-set numerical improvement
             best_leaf = self._best_leaf_candidate(curr, key_int)
             if best_leaf is not curr:
                 curr = best_leaf
@@ -221,7 +212,7 @@ class PastryRing:
                     return curr, hops
                 continue
 
-            # 2) prefix routing using routing table
+            # prefix routing using routing table
             pref = self._prefix_len(curr.id_bits, key_bits)
             if pref >= self.bit_len:
                 return curr, hops
@@ -235,7 +226,7 @@ class PastryRing:
                     return curr, hops
                 continue
 
-            # 3) fallback to any known candidate that improves prefix or distance
+            # fallback to any known candidate that improves prefix or distance
             candidates = []
             for row in curr.route_table:
                 for n in row.values():
@@ -243,7 +234,7 @@ class PastryRing:
                         candidates.append(n)
             candidates += curr.leaf_set
 
-            # remove visited + None + self
+            # remove visited & None & self
             cand2 = [c for c in candidates if c is not None and c.id not in visited and c is not curr]
             if not cand2:
                 return curr, hops
