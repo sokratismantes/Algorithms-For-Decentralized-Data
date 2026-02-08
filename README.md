@@ -1,4 +1,4 @@
 - load dataset
-- run main_chord.py tp run chord dht and give value of K for concurrent lookup when asked to/ give names of K movies selected or just press enter for random movie name usage 
-- run main_pastry.py tp run pastry dht and give value of K for concurrent lookup when asked to/ give names of K movies selected or just press enter for random movie name usage 
+- run main_chord.py to run chord dht and give value of K for concurrent lookup when asked to/ give names of K movies selected or just press enter for random movie name usage 
+- run main_pastry.py to run pastry dht and give value of K for concurrent lookup when asked to/ give names of K movies selected or just press enter for random movie name usage 
 - run gui_dht.py to run chord and pastry simultaneously and see collective results for each DHT
