@@ -18,6 +18,9 @@
 ```bash
 pip install pandas matplotlib
 
+Το project δουλεύει με CSV `data_movies_clean.csv` οπότε κάνουμε πρώτα τη μετατροπή από το αρχικό xlsx σε csv: 
+python -c "import pandas as pd; df=pd.read_excel('data_movies.xlsx'); df.to_csv('data_movies_clean.csv', index=False, encoding='utf-8')"
+
 Εκτέλεση (CLI)
 A) Chord experiment + plots
 
